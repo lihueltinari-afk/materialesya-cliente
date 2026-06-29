@@ -7,7 +7,15 @@ import 'producto_detalle_screen.dart';
 class ComercioScreen extends StatefulWidget {
   final Map<String, dynamic> comercio;
   final void Function(Map<String, dynamic>) onAgregar;
-  const ComercioScreen({super.key, required this.comercio, required this.onAgregar});
+  final Map<int, Map<String, dynamic>> carritoInicial;
+  final VoidCallback? onVerPedidos;
+  const ComercioScreen({
+    super.key,
+    required this.comercio,
+    required this.onAgregar,
+    this.carritoInicial = const {},
+    this.onVerPedidos,
+  });
   @override
   State<ComercioScreen> createState() => _ComercioScreenState();
 }
@@ -16,8 +24,7 @@ class _ComercioScreenState extends State<ComercioScreen> {
   List<dynamic> _productos = [];
   bool _cargando = true;
   String _busqueda = '';
-  final Map<int, Map<String, dynamic>> _carrito = {};
-  // subcategorías expandidas/colapsadas
+  late Map<int, Map<String, dynamic>> _carrito;
   final Set<String> _colapsadas = {};
 
   int get _totalItems => _carrito.values.fold(0, (a, b) => a + (b['cantidad'] as int));
@@ -25,6 +32,7 @@ class _ComercioScreenState extends State<ComercioScreen> {
   @override
   void initState() {
     super.initState();
+    _carrito = Map.from(widget.carritoInicial);
     _cargar();
   }
 
@@ -70,6 +78,7 @@ class _ComercioScreenState extends State<ComercioScreen> {
           'unidad': producto['unidad'] ?? '',
           'comercio_id': widget.comercio['id'],
           'comercio_nombre': widget.comercio['nombre'],
+          'costo_envio': widget.comercio['costo_envio'] ?? 0,
           'cantidad': 1,
         };
       }
@@ -91,6 +100,7 @@ class _ComercioScreenState extends State<ComercioScreen> {
         carrito: Map.from(_carrito),
         comercio: widget.comercio,
         onActualizar: (nuevo) => setState(() { _carrito.clear(); _carrito.addAll(nuevo); }),
+        onVerPedidos: widget.onVerPedidos,
       ),
     ));
   }

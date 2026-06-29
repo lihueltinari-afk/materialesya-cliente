@@ -7,7 +7,8 @@ class CartScreen extends StatefulWidget {
   final Map<int, Map<String, dynamic>> carrito;
   final Map<String, dynamic> comercio;
   final void Function(Map<int, Map<String, dynamic>>) onActualizar;
-  const CartScreen({super.key, required this.carrito, required this.comercio, required this.onActualizar});
+  final VoidCallback? onVerPedidos;
+  const CartScreen({super.key, required this.carrito, required this.comercio, required this.onActualizar, this.onVerPedidos});
   @override
   State<CartScreen> createState() => _CartScreenState();
 }
@@ -70,6 +71,7 @@ class _CartScreenState extends State<CartScreen> {
           total: _total,
           metodoPago: _metodoPago,
           dirEntrega: _dirCtrl.text.trim(),
+          onVerPedidos: widget.onVerPedidos,
         )),
         (route) => route.isFirst,
       );
@@ -534,9 +536,11 @@ class _ConfirmacionScreen extends StatelessWidget {
   final double total;
   final String metodoPago;
   final String dirEntrega;
+  final VoidCallback? onVerPedidos;
   const _ConfirmacionScreen({
     required this.pedidoId, required this.comercio,
-    required this.total, required this.metodoPago, required this.dirEntrega});
+    required this.total, required this.metodoPago, required this.dirEntrega,
+    this.onVerPedidos});
 
   String _fmt(double v) => v.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
 
@@ -588,7 +592,7 @@ class _ConfirmacionScreen extends StatelessWidget {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).popUntil((r) => r.isFirst);
-              // Navegar a tab pedidos (index 2)
+              onVerPedidos?.call();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: kAmber,

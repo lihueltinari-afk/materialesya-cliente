@@ -18,6 +18,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int get _totalCarrito =>
       _carrito.values.fold(0, (a, b) => a + (b['cantidad'] as int));
 
+  Map<int, Map<String, dynamic>> _carritoDeComercio(int comercioId) =>
+      Map.fromEntries(_carrito.entries.where((e) => e.value['comercio_id'] == comercioId));
+
   void _agregarAlCarrito(Map<String, dynamic> item) {
     setState(() {
       final id = item['id'] as int;
@@ -59,7 +62,12 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           MaterialPageRoute(
             builder: (_) =>
-                ComercioScreen(comercio: c, onAgregar: _agregarAlCarrito),
+                ComercioScreen(
+                    comercio: c,
+                    onAgregar: _agregarAlCarrito,
+                    carritoInicial: _carritoDeComercio(c['id'] as int),
+                    onVerPedidos: () => setState(() => _navIndex = 2),
+                  ),
           ),
         ),
         onCarritoTap: _irAlCarrito,
@@ -70,7 +78,12 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           MaterialPageRoute(
             builder: (_) =>
-                ComercioScreen(comercio: c, onAgregar: _agregarAlCarrito),
+                ComercioScreen(
+                    comercio: c,
+                    onAgregar: _agregarAlCarrito,
+                    carritoInicial: _carritoDeComercio(c['id'] as int),
+                    onVerPedidos: () => setState(() => _navIndex = 2),
+                  ),
           ),
         ),
       ),
