@@ -1,25 +1,8 @@
-plugins = []
-headers = []
-redirects = []
+﻿[build]
+publish = "build/web"
 
-[functions]
-
-[functions."*"]
-
-[build]
-publish = "C:\\materialesya\\app_cliente"
-publishOrigin = "default"
-
-[build.environment]
-
-[build.processing]
-
-[build.processing.css]
-
-[build.processing.html]
-
-[build.processing.images]
-
-[build.processing.js]
-
-[build.services]
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
+force = false

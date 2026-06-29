@@ -345,6 +345,12 @@ class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
           _LineaTotal('Total', '\$${fmt(total)}', negrita: true, grande: true),
         ]),
       ),
+      const SizedBox(height: 8),
+
+      // ── Calificación (solo si entregado)
+      if (estado == 'entregado')
+        _BotonCalificar(pedidoId: widget.pedidoId, comercio: p['comercio_nombre'] ?? ''),
+
       const SizedBox(height: 24),
     ]);
   }
@@ -394,6 +400,126 @@ class _LineaTotal extends StatelessWidget {
       Text(valor, style: TextStyle(fontSize: grande ? 20 : 14,
         fontWeight: FontWeight.w900, color: grande ? kAmber : kTextDark)),
     ]);
+  }
+}
+
+// ─── BOTÓN CALIFICAR ─────────────────────────────────────────────────────────
+class _BotonCalificar extends StatefulWidget {
+  final int pedidoId;
+  final String comercio;
+  const _BotonCalificar({required this.pedidoId, required this.comercio});
+  @override
+  State<_BotonCalificar> createState() => _BotonCalificarState();
+}
+
+class _BotonCalificarState extends State<_BotonCalificar> {
+  bool _calificado = false;
+
+  Future<void> _mostrarDialog() async {
+    int estrellas = 5;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setS) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            const Text('¿Cómo fue tu experiencia?',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: kTextDark)),
+            const SizedBox(height: 6),
+            Text('Calificá tu pedido en ${widget.comercio}',
+              style: const TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 24),
+            // Estrellas
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(5, (i) =>
+              GestureDetector(
+                onTap: () => setS(() => estrellas = i + 1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Icon(
+                    i < estrellas ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: const Color(0xFFF59E0B), size: 40,
+                  ),
+                ),
+              ),
+            )),
+            const SizedBox(height: 8),
+            Text(
+              ['', 'Muy malo', 'Malo', 'Regular', 'Bueno', 'Excelente'][estrellas],
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: kTextDark),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final res = await ApiService.post('/pedidos/${widget.pedidoId}/calificar', {'estrellas': estrellas});
+                if (mounted) {
+                  if (res['status'] == 200) {
+                    setState(() => _calificado = true);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('¡Gracias por tu calificación!'), backgroundColor: kSuccess));
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kAmber,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: const Text('Enviar calificación',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+            ),
+            const SizedBox(height: 8),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_calificado) {
+      return Container(
+        color: Colors.white,
+        padding: const EdgeInsets.all(16),
+        child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.star_rounded, color: Color(0xFFF59E0B), size: 20),
+          SizedBox(width: 6),
+          Text('Ya calificaste este pedido', style: TextStyle(fontSize: 13, color: Colors.grey)),
+        ]),
+      );
+    }
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('¿Cómo estuvo el pedido?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextDark)),
+        const SizedBox(height: 4),
+        const Text('Tu opinión ayuda a mejorar el servicio', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 12),
+        OutlinedButton(
+          onPressed: _mostrarDialog,
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: kAmber),
+            minimumSize: const Size(double.infinity, 46),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.star_border_rounded, color: kAmber, size: 18),
+            SizedBox(width: 6),
+            Text('Calificar pedido', style: TextStyle(color: kAmber, fontWeight: FontWeight.w700)),
+          ]),
+        ),
+      ]),
+    );
   }
 }
 

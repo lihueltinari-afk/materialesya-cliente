@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../services/api_service.dart';
 import 'login_screen.dart';
+import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -20,8 +22,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _fade = Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
     _scale = Tween<double>(begin: 0.8, end: 1).animate(CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut));
     _ctrl.forward();
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+    Future.delayed(const Duration(seconds: 2), () async {
+      if (!mounted) return;
+      final token = await ApiService.obtenerToken();
+      if (!mounted) return;
+      if (token != null && token.isNotEmpty) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+      } else {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+      }
     });
   }
 

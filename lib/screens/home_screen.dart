@@ -63,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         onCarritoTap: _irAlCarrito,
+        onBuscarTap: () => setState(() => _navIndex = 1),
       ),
       _BuscarTab(
         onVerComercio: (c) => Navigator.push(
@@ -151,24 +152,29 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-// ─── CATEGORÍAS ───────────────────────────────────────────────────────────────
-const _kCategorias = [
-  {'label': 'Todo',         'emoji': '🏗️', 'id': null},
-  {'label': 'Materiales',   'emoji': '🧱', 'id': 1},
-  {'label': 'Insumos',      'emoji': '🎨', 'id': 2},
-  {'label': 'Herramientas', 'emoji': '🔧', 'id': 3},
-  {'label': 'Maquinaria',   'emoji': '⚙️', 'id': 4},
-];
+// ─── CATEGORÍAS — íconos por nombre
+String _emojiCategoria(String nombre) {
+  switch (nombre.toLowerCase()) {
+    case 'materiales': return '🧱';
+    case 'insumos':    return '🎨';
+    case 'herramientas': return '🔧';
+    case 'maquinaria': return '⚙️';
+    case 'otros':      return '📦';
+    default:           return '🏗️';
+  }
+}
 
 // ─── TAB INICIO ───────────────────────────────────────────────────────────────
 class _InicioTab extends StatefulWidget {
   final int carritoCount;
   final void Function(Map<String, dynamic>) onVerComercio;
   final VoidCallback onCarritoTap;
+  final VoidCallback onBuscarTap;
   const _InicioTab({
     required this.carritoCount,
     required this.onVerComercio,
     required this.onCarritoTap,
+    required this.onBuscarTap,
   });
   @override
   State<_InicioTab> createState() => _InicioTabState();
@@ -176,136 +182,104 @@ class _InicioTab extends StatefulWidget {
 
 class _InicioTabState extends State<_InicioTab> {
   List<dynamic> _comercios = [];
+  List<Map<String, dynamic>> _categorias = [];
   bool _cargando = true;
-  int _catSeleccionada = 0; // índice en _kCategorias
+  int _catSeleccionada = 0; // 0 = Todas
 
   @override
   void initState() {
     super.initState();
-    _cargar();
+    _cargarTodo();
   }
 
-  Future<void> _cargar({int? categoriaId}) async {
+  Future<void> _cargarTodo() async {
     setState(() => _cargando = true);
-    final path = categoriaId != null
-        ? '/comercio/lista?categoria_id=$categoriaId'
-        : '/comercio/lista';
-    final res = await ApiService.get(path);
+    final resCats = await ApiService.get('/comercio/categorias');
+    final resComs = await ApiService.get('/comercio/lista');
     if (mounted) {
+      final cats = resCats['data'] is List ? List<Map<String, dynamic>>.from(resCats['data']) : <Map<String, dynamic>>[];
       setState(() {
-        _comercios = res['data'] is List ? res['data'] : [];
+        _categorias = cats;
+        _comercios = resComs['data'] is List ? resComs['data'] : [];
         _cargando = false;
       });
     }
   }
 
+  Future<void> _cargar({int? categoriaId}) async {
+    setState(() => _cargando = true);
+    final path = categoriaId != null ? '/comercio/lista?categoria_id=$categoriaId' : '/comercio/lista';
+    final res = await ApiService.get(path);
+    if (mounted) setState(() { _comercios = res['data'] is List ? res['data'] : []; _cargando = false; });
+  }
+
   void _seleccionarCategoria(int idx) {
     setState(() => _catSeleccionada = idx);
-    final cat = _kCategorias[idx];
-    _cargar(categoriaId: cat['id'] as int?);
+    if (idx == 0) {
+      _cargar();
+    } else {
+      final cat = _categorias[idx - 1];
+      _cargar(categoriaId: cat['id'] as int);
+    }
   }
+
+  String get _labelActual => _catSeleccionada == 0 ? 'Todos los locales' : _categorias[_catSeleccionada - 1]['nombre'] as String;
 
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: [
-        // ── AppBar naranja con título y carrito
+        // ── AppBar naranja fija (sin título duplicado)
         SliverAppBar(
           pinned: true,
+          floating: false,
           backgroundColor: kAmber,
           elevation: 0,
-          expandedHeight: 110,
-          flexibleSpace: FlexibleSpaceBar(
-            collapseMode: CollapseMode.pin,
-            background: Container(
-              color: kAmber,
-              padding: EdgeInsets.fromLTRB(
-                  16, MediaQuery.of(context).padding.top + 10, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Fila superior: título centrado + carrito
-                  Row(children: [
-                    const SizedBox(width: 32),
-                    const Expanded(
-                      child: Text(
-                        'MaterialesYa',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: widget.onCarritoTap,
-                      child: Stack(children: [
-                        const Icon(Icons.shopping_cart_outlined,
-                            color: Colors.white, size: 26),
-                        if (widget.carritoCount > 0)
-                          Positioned(
-                            right: 0, top: 0,
-                            child: Container(
-                              width: 14, height: 14,
-                              decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle),
-                              child: Center(
-                                child: Text('${widget.carritoCount}',
-                                    style: const TextStyle(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w900,
-                                        color: kAmber)),
-                              ),
-                            ),
-                          ),
-                      ]),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  // Barra de búsqueda
-                  Container(
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Row(children: [
-                      SizedBox(width: 12),
-                      Icon(Icons.search_rounded,
-                          color: Color(0xFFBBBBBB), size: 20),
-                      SizedBox(width: 8),
-                      Text('Buscar locales o materiales...',
-                          style: TextStyle(
-                              color: Color(0xFFBBBBBB), fontSize: 13)),
+          automaticallyImplyLeading: false,
+          toolbarHeight: 110,
+          flexibleSpace: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Row(children: [
+                  const Expanded(
+                    child: Text('MaterialesYa', textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.3)),
+                  ),
+                  GestureDetector(
+                    onTap: widget.onCarritoTap,
+                    child: Stack(children: [
+                      const Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 26),
+                      if (widget.carritoCount > 0)
+                        Positioned(right: 0, top: 0, child: Container(
+                          width: 14, height: 14,
+                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                          child: Center(child: Text('${widget.carritoCount}',
+                            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: kAmber))),
+                        )),
                     ]),
                   ),
-                ],
-              ),
+                ]),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: widget.onBuscarTap,
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                    child: const Row(children: [
+                      SizedBox(width: 12),
+                      Icon(Icons.search_rounded, color: Color(0xFFBBBBBB), size: 20),
+                      SizedBox(width: 8),
+                      Text('Buscar locales o materiales...', style: TextStyle(color: Color(0xFFBBBBBB), fontSize: 13)),
+                    ]),
+                  ),
+                ),
+              ]),
             ),
           ),
-          // Título colapsado
-          title: const Text('MaterialesYa',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18)),
-          centerTitle: true,
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: GestureDetector(
-                onTap: widget.onCarritoTap,
-                child: const Icon(Icons.shopping_cart_outlined,
-                    color: Colors.white, size: 24),
-              ),
-            ),
-          ],
         ),
 
-        // ── Categorías
+        // ── Categorías (dinámicas desde API)
         SliverToBoxAdapter(
           child: Container(
             color: Colors.white,
@@ -313,42 +287,24 @@ class _InicioTabState extends State<_InicioTab> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Row(
-                children: List.generate(_kCategorias.length, (i) {
-                  final cat = _kCategorias[i];
-                  final sel = i == _catSeleccionada;
-                  return GestureDetector(
-                    onTap: () => _seleccionarCategoria(i),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.only(right: 10),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: sel ? kAmber : const Color(0xFFF5F5F3),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: sel ? kAmber : Colors.transparent,
-                        ),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(cat['emoji'] as String,
-                            style: const TextStyle(fontSize: 16)),
-                        const SizedBox(width: 6),
-                        Text(
-                          cat['label'] as String,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                sel ? Colors.white : const Color(0xFF444444),
-                          ),
-                        ),
-                      ]),
-                    ),
+              child: Row(children: [
+                // "Todas" siempre primero
+                _CategoriaChip(
+                  emoji: '🏗️', label: 'Todas',
+                  seleccionado: _catSeleccionada == 0,
+                  onTap: () => _seleccionarCategoria(0),
+                ),
+                ..._categorias.asMap().entries.map((e) {
+                  final idx = e.key + 1;
+                  final cat = e.value;
+                  return _CategoriaChip(
+                    emoji: _emojiCategoria(cat['nombre'] as String),
+                    label: cat['nombre'] as String,
+                    seleccionado: _catSeleccionada == idx,
+                    onTap: () => _seleccionarCategoria(idx),
                   );
                 }),
-              ),
+              ]),
             ),
           ),
         ),
@@ -361,62 +317,64 @@ class _InicioTabState extends State<_InicioTab> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 16, 14, 10),
             child: Row(children: [
-              Text(
-                _catSeleccionada == 0
-                    ? 'Todos los locales'
-                    : _kCategorias[_catSeleccionada]['label'] as String,
-                style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: kTextDark),
-              ),
+              Text(_labelActual, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: kTextDark)),
               const Spacer(),
               if (!_cargando)
-                Text(
-                  '${_comercios.length} ${_comercios.length == 1 ? 'local' : 'locales'}',
-                  style:
-                      const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+                Text('${_comercios.length} ${_comercios.length == 1 ? 'local' : 'locales'}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ]),
           ),
         ),
 
         // ── Lista de locales o loading
         if (_cargando)
-          const SliverFillRemaining(
-            child: Center(child: CircularProgressIndicator(color: kAmber)))
+          const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: kAmber)))
         else if (_comercios.isEmpty)
-          SliverFillRemaining(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.store_outlined,
-                      size: 48, color: Colors.grey),
-                  const SizedBox(height: 12),
-                  Text(
-                    'No hay locales con\n${(_kCategorias[_catSeleccionada]['label'] as String).toLowerCase()}',
-                    textAlign: TextAlign.center,
-                    style:
-                        const TextStyle(color: Colors.grey, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-          )
+          SliverFillRemaining(child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.store_outlined, size: 48, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text('No hay locales con $_labelActual'.toLowerCase(),
+              textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+          ])))
         else
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (_, i) => _LocalCard(
-                comercio: _comercios[i],
-                onTap: () => widget.onVerComercio(_comercios[i]),
-              ),
-              childCount: _comercios.length,
-            ),
-          ),
+          SliverList(delegate: SliverChildBuilderDelegate(
+            (_, i) => _LocalCard(comercio: _comercios[i], onTap: () => widget.onVerComercio(_comercios[i])),
+            childCount: _comercios.length,
+          )),
 
         const SliverToBoxAdapter(child: SizedBox(height: 20)),
       ],
+    );
+  }
+}
+
+class _CategoriaChip extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final bool seleccionado;
+  final VoidCallback onTap;
+  const _CategoriaChip({required this.emoji, required this.label, required this.seleccionado, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(right: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: seleccionado ? kAmber : const Color(0xFFF5F5F3),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: seleccionado ? kAmber : Colors.transparent),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(emoji, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+            color: seleccionado ? Colors.white : const Color(0xFF444444))),
+        ]),
+      ),
     );
   }
 }
@@ -486,7 +444,7 @@ class _LocalCard extends StatelessWidget {
     final tiempo = comercio['tiempo_entrega_estimado'] ?? 30;
 
     return GestureDetector(
-      onTap: abierto ? onTap : null,
+      onTap: onTap,
       child: Container(
         margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
         padding: const EdgeInsets.all(12),
@@ -611,36 +569,30 @@ class _BuscarTab extends StatefulWidget {
 
 class _BuscarTabState extends State<_BuscarTab> {
   final _ctrl = TextEditingController();
-  List<dynamic> _comercios = [];
-  List<dynamic> _filtrados = [];
-  bool _cargando = true;
+  List<dynamic> _resultados = [];
+  bool _cargando = false;
+  bool _buscado = false;
 
   @override
-  void initState() {
-    super.initState();
-    _cargar();
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
 
-  Future<void> _cargar() async {
-    final res = await ApiService.get('/comercio/lista');
+  Future<void> _buscar(String q) async {
+    if (q.trim().isEmpty) {
+      setState(() { _resultados = []; _buscado = false; });
+      return;
+    }
+    setState(() => _cargando = true);
+    final res = await ApiService.get('/comercio/lista?busqueda=${Uri.encodeComponent(q.trim())}');
     if (mounted) {
       setState(() {
-        _comercios = res['data'] is List ? res['data'] : [];
-        _filtrados = _comercios;
+        _resultados = res['data'] is List ? res['data'] : [];
         _cargando = false;
+        _buscado = true;
       });
     }
-  }
-
-  void _filtrar(String q) {
-    setState(() {
-      if (q.isEmpty) { _filtrados = _comercios; return; }
-      final lower = q.toLowerCase();
-      _filtrados = _comercios.where((c) =>
-        (c['nombre'] ?? '').toString().toLowerCase().contains(lower) ||
-        (c['descripcion'] ?? '').toString().toLowerCase().contains(lower)
-      ).toList();
-    });
   }
 
   @override
@@ -651,52 +603,107 @@ class _BuscarTabState extends State<_BuscarTab> {
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Buscar',
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: kTextDark)),
+            const Text('Buscar', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: kTextDark)),
+            const SizedBox(height: 4),
+            const Text('Buscá por local, producto o material', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 10),
             TextField(
               controller: _ctrl,
-              onChanged: _filtrar,
+              onChanged: _buscar,
+              autofocus: false,
+              textInputAction: TextInputAction.search,
+              onSubmitted: _buscar,
               decoration: InputDecoration(
-                hintText: 'Locales, materiales...',
-                prefixIcon:
-                    const Icon(Icons.search_rounded, color: kAmber),
+                hintText: 'Ej: cemento, pintura, taladro...',
+                prefixIcon: const Icon(Icons.search_rounded, color: kAmber),
                 suffixIcon: _ctrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () {
-                          _ctrl.clear();
-                          _filtrar('');
-                        })
-                    : null,
-                filled: true,
-                fillColor: kBgPage,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+                  ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { _ctrl.clear(); _buscar(''); })
+                  : null,
+                filled: true, fillColor: kBgPage,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kAmber)),
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
           ]),
         ),
-        if (_cargando)
-          const Expanded(
-              child: Center(child: CircularProgressIndicator(color: kAmber)))
-        else
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(14),
-              itemCount: _filtrados.length,
-              itemBuilder: (_, i) => _LocalCard(
-                comercio: _filtrados[i],
-                onTap: () => widget.onVerComercio(_filtrados[i]),
+        Expanded(child: _buildContenido()),
+      ]),
+    );
+  }
+
+  Widget _buildContenido() {
+    if (_cargando) return const Center(child: CircularProgressIndicator(color: kAmber));
+
+    if (!_buscado) return _SugerenciasBusqueda(onSugerencia: (s) {
+      _ctrl.text = s;
+      _buscar(s);
+    });
+
+    if (_resultados.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const Icon(Icons.search_off_rounded, size: 56, color: Colors.grey),
+      const SizedBox(height: 12),
+      Text('No encontramos "${_ctrl.text}"', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kTextDark)),
+      const SizedBox(height: 6),
+      const Text('Intentá con otro término', style: TextStyle(fontSize: 13, color: Colors.grey)),
+    ]));
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+        child: Text('${_resultados.length} ${_resultados.length == 1 ? 'local encontrado' : 'locales encontrados'}',
+          style: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w600)),
+      ),
+      Expanded(child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+        itemCount: _resultados.length,
+        itemBuilder: (_, i) => _LocalCard(
+          comercio: _resultados[i],
+          onTap: () => widget.onVerComercio(_resultados[i]),
+        ),
+      )),
+    ]);
+  }
+}
+
+class _SugerenciasBusqueda extends StatelessWidget {
+  final void Function(String) onSugerencia;
+  const _SugerenciasBusqueda({required this.onSugerencia});
+
+  static const _sugerencias = [
+    {'label': 'Cemento', 'emoji': '🧱'},
+    {'label': 'Pintura', 'emoji': '🎨'},
+    {'label': 'Taladro', 'emoji': '🔧'},
+    {'label': 'Arena', 'emoji': '⛏️'},
+    {'label': 'Ladrillo', 'emoji': '🏗️'},
+    {'label': 'Andamio', 'emoji': '⚙️'},
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Búsquedas frecuentes', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kTextDark)),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: _sugerencias.map((s) =>
+          GestureDetector(
+            onTap: () => onSugerencia(s['label']!),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.grey.shade200),
               ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(s['emoji']!, style: const TextStyle(fontSize: 14)),
+                const SizedBox(width: 6),
+                Text(s['label']!, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kTextDark)),
+              ]),
             ),
           ),
+        ).toList()),
       ]),
     );
   }

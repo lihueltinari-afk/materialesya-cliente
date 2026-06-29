@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'cart_screen.dart';
+import 'producto_detalle_screen.dart';
 
 class ComercioScreen extends StatefulWidget {
   final Map<String, dynamic> comercio;
@@ -13,10 +14,11 @@ class ComercioScreen extends StatefulWidget {
 
 class _ComercioScreenState extends State<ComercioScreen> {
   List<dynamic> _productos = [];
-  List<dynamic> _filtrados = [];
   bool _cargando = true;
   String _busqueda = '';
   final Map<int, Map<String, dynamic>> _carrito = {};
+  // subcategorías expandidas/colapsadas
+  final Set<String> _colapsadas = {};
 
   int get _totalItems => _carrito.values.fold(0, (a, b) => a + (b['cantidad'] as int));
 
@@ -31,21 +33,28 @@ class _ComercioScreenState extends State<ComercioScreen> {
     final res = await ApiService.get('/comercio/$id/productos');
     if (mounted) {
       final lista = res['data'] is List ? res['data'] : [];
-      setState(() { _productos = lista; _filtrados = lista; _cargando = false; });
+      setState(() { _productos = lista; _cargando = false; });
     }
   }
 
-  void _filtrar(String q) {
-    setState(() {
-      _busqueda = q;
-      if (q.isEmpty) { _filtrados = _productos; return; }
-      final lower = q.toLowerCase();
-      _filtrados = _productos.where((p) =>
-        (p['nombre'] ?? '').toString().toLowerCase().contains(lower) ||
-        (p['categoria_nombre'] ?? '').toString().toLowerCase().contains(lower) ||
-        (p['marca'] ?? '').toString().toLowerCase().contains(lower)
-      ).toList();
-    });
+  List<dynamic> get _filtrados {
+    if (_busqueda.isEmpty) return _productos;
+    final lower = _busqueda.toLowerCase();
+    return _productos.where((p) =>
+      (p['nombre'] ?? '').toString().toLowerCase().contains(lower) ||
+      (p['subcategoria'] ?? '').toString().toLowerCase().contains(lower) ||
+      (p['marca'] ?? '').toString().toLowerCase().contains(lower)
+    ).toList();
+  }
+
+  // Agrupa la lista filtrada por subcategoría
+  Map<String, List<dynamic>> get _agrupados {
+    final map = <String, List<dynamic>>{};
+    for (final p in _filtrados) {
+      final sub = (p['subcategoria'] as String?) ?? 'Otros';
+      map.putIfAbsent(sub, () => []).add(p);
+    }
+    return map;
   }
 
   void _agregar(Map<String, dynamic> producto) {
@@ -64,7 +73,6 @@ class _ComercioScreenState extends State<ComercioScreen> {
           'cantidad': 1,
         };
       }
-      // También notifica al padre para el badge global
       widget.onAgregar(_carrito[id]!);
     });
   }
@@ -87,54 +95,89 @@ class _ComercioScreenState extends State<ComercioScreen> {
     ));
   }
 
+  IconData _iconoSubcat(String sub) {
+    switch (sub.toLowerCase()) {
+      case 'áridos y granulados':      return Icons.terrain_outlined;
+      case 'cementos y mezclas':       return Icons.science_outlined;
+      case 'mampostería':              return Icons.foundation_outlined;
+      case 'estructura metálica':      return Icons.architecture_outlined;
+      case 'pintura y revestimientos': return Icons.format_paint_outlined;
+      case 'impermeabilización':       return Icons.water_drop_outlined;
+      case 'fijaciones':               return Icons.hardware_outlined;
+      case 'selladores':               return Icons.vaccines_outlined;
+      case 'abrasivos':                return Icons.rotate_right_outlined;
+      case 'herramientas eléctricas':  return Icons.electrical_services_outlined;
+      case 'herramientas neumáticas':  return Icons.air_outlined;
+      case 'medición y trazado':       return Icons.straighten_outlined;
+      case 'maquinaria de obra':       return Icons.agriculture_outlined;
+      case 'andamiaje y seguridad':    return Icons.safety_check_outlined;
+      case 'electricidad y energía':   return Icons.bolt_outlined;
+      default:                         return Icons.category_outlined;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final agrupados = _agrupados;
+    final subcats = agrupados.keys.toList();
+
     return Scaffold(
       backgroundColor: kBgPage,
       body: CustomScrollView(slivers: [
+        // ── Header del comercio
         SliverAppBar(
-          expandedHeight: 140,
+          expandedHeight: 130,
           pinned: true,
           backgroundColor: Colors.white,
+          elevation: 0.5,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: kTextDark),
             onPressed: () => Navigator.pop(context),
           ),
           flexibleSpace: FlexibleSpaceBar(
             background: Container(
-              color: kAmber.withValues(alpha: 0.08),
+              color: kAmber.withValues(alpha: 0.07),
               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const SizedBox(height: 40),
-                Image.network(
-                  widget.comercio['logo_url'] ?? '',
-                  width: 56, height: 56,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.store, size: 48, color: kAmber),
+                Container(
+                  width: 54, height: 54,
+                  decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8)]),
+                  child: const Icon(Icons.store_rounded, color: kAmber, size: 28),
                 ),
-                const SizedBox(height: 6),
-                Text(widget.comercio['nombre'] ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kTextDark)),
-                Text(widget.comercio['direccion'] ?? '', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                const SizedBox(height: 8),
+                Text(widget.comercio['nombre'] ?? '',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextDark)),
+                Text(widget.comercio['direccion'] ?? '',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ]),
             ),
           ),
         ),
+
+        // ── Info del local (tiempo, envío, calificación)
         SliverToBoxAdapter(child: Container(
           color: Colors.white,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
           child: Row(children: [
-            _chip(Icons.access_time_outlined, '${widget.comercio['tiempo_entrega_estimado'] ?? 30} min'),
-            const SizedBox(width: 8),
+            _chip(Icons.access_time_outlined,
+              '${widget.comercio['tiempo_entrega_estimado'] ?? 30} min'),
+            const SizedBox(width: 12),
             _chip(Icons.delivery_dining_outlined, () {
               final e = double.tryParse(widget.comercio['costo_envio'].toString()) ?? 0;
               return e == 0 ? 'Envío gratis' : '\$${e.toStringAsFixed(0)}';
             }()),
-            const SizedBox(width: 8),
-            _chip(Icons.star, '${double.tryParse(widget.comercio['calificacion_promedio'].toString())?.toStringAsFixed(1) ?? ''}'),
+            const SizedBox(width: 12),
+            _chip(Icons.star_rounded,
+              '${double.tryParse(widget.comercio['calificacion_promedio'].toString())?.toStringAsFixed(1) ?? '0.0'}'),
           ]),
         )),
+
+        // ── Buscador
         SliverToBoxAdapter(child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: TextField(
-            onChanged: _filtrar,
+            onChanged: (q) => setState(() => _busqueda = q),
             decoration: InputDecoration(
               hintText: 'Buscar en ${widget.comercio['nombre']}...',
               prefixIcon: const Icon(Icons.search, color: kAmber, size: 20),
@@ -144,34 +187,78 @@ class _ComercioScreenState extends State<ComercioScreen> {
             ),
           ),
         )),
+
+        // ── Productos agrupados por subcategoría
         if (_cargando)
           const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: kAmber)))
         else if (_filtrados.isEmpty)
-          SliverFillRemaining(child: Center(child: Text(_busqueda.isEmpty ? 'Este local no tiene productos' : 'Sin resultados para "$_busqueda"', style: const TextStyle(color: Colors.grey))))
+          SliverFillRemaining(child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.search_off_rounded, size: 48, color: Colors.grey),
+            const SizedBox(height: 10),
+            Text(_busqueda.isEmpty ? 'No hay productos' : 'Sin resultados para "$_busqueda"',
+              style: const TextStyle(color: Colors.grey, fontSize: 14)),
+          ])))
         else
           SliverList(delegate: SliverChildBuilderDelegate(
             (_, i) {
-              final p = _filtrados[i];
-              final id = p['id'] as int;
-              final cant = _carrito[id]?['cantidad'] as int? ?? 0;
-              final precio = double.tryParse(p['precio'].toString()) ?? 0.0;
-              return _ProductoTile(producto: p, precio: precio, cantidad: cant, onAgregar: () => _agregar(p), onQuitar: () => _quitar(id));
+              final sub = subcats[i];
+              final prods = agrupados[sub]!;
+              final colapsada = _colapsadas.contains(sub);
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // ── Cabecera de subcategoría (tappable para colapsar)
+                GestureDetector(
+                  onTap: () => setState(() {
+                    if (colapsada) _colapsadas.remove(sub);
+                    else _colapsadas.add(sub);
+                  }),
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: kAmber.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(children: [
+                      Icon(_iconoSubcat(sub), size: 16, color: kAmber),
+                      const SizedBox(width: 8),
+                      Text(sub, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: kAmber)),
+                      const Spacer(),
+                      Text('${prods.length} ${prods.length == 1 ? 'producto' : 'productos'}',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      const SizedBox(width: 6),
+                      Icon(colapsada ? Icons.expand_more : Icons.expand_less,
+                        size: 18, color: kAmber),
+                    ]),
+                  ),
+                ),
+                // ── Productos de esa subcategoría
+                if (!colapsada)
+                  ...prods.map((p) {
+                    final id = p['id'] as int;
+                    final cant = _carrito[id]?['cantidad'] as int? ?? 0;
+                    final precio = double.tryParse(p['precio'].toString()) ?? 0.0;
+                    return _ProductoTile(
+                      producto: p, precio: precio, cantidad: cant,
+                      onAgregar: () => _agregar(p),
+                      onQuitar: () => _quitar(id),
+                    );
+                  }),
+              ]);
             },
-            childCount: _filtrados.length,
+            childCount: subcats.length,
           )),
+
         const SliverToBoxAdapter(child: SizedBox(height: 90)),
       ]),
       bottomNavigationBar: _totalItems > 0 ? _barraCarrito() : null,
     );
   }
 
-  Widget _chip(IconData icono, String label) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icono, size: 13, color: Colors.grey),
-      const SizedBox(width: 3),
-      Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-    ]);
-  }
+  Widget _chip(IconData icono, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Icon(icono, size: 13, color: Colors.grey),
+    const SizedBox(width: 3),
+    Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+  ]);
 
   Widget _barraCarrito() {
     final total = _carrito.values.fold<double>(0, (a, b) => a + (b['precio'] as double) * (b['cantidad'] as int));
@@ -181,7 +268,12 @@ class _ComercioScreenState extends State<ComercioScreen> {
         margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
         child: ElevatedButton(
           onPressed: _irAlCarrito,
-          style: ElevatedButton.styleFrom(backgroundColor: kAmber, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kAmber,
+            minimumSize: const Size(double.infinity, 52),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            elevation: 0,
+          ),
           child: Row(children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -212,47 +304,72 @@ class _ProductoTile extends StatelessWidget {
     final sinStock = stock == 0;
     final fmt = precio.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))]),
-      child: Row(children: [
-        Container(
-          width: 56, height: 56,
-          decoration: BoxDecoration(color: kBgPage, borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.construction, color: kAmber, size: 26),
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ProductoDetalleScreen(
+          producto: Map<String, dynamic>.from(producto as Map),
+          cantidadActual: cantidad,
+          onAgregar: onAgregar,
+          onQuitar: onQuitar,
         ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(producto['nombre'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kTextDark), maxLines: 2, overflow: TextOverflow.ellipsis),
-          if ((producto['marca'] ?? '').isNotEmpty)
-            Text(producto['marca'], style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          Text('${producto['unidad'] ?? ''} · ${sinStock ? 'Sin stock' : '$stock en stock'}', style: TextStyle(fontSize: 10, color: sinStock ? Colors.red : Colors.grey)),
-          const SizedBox(height: 4),
-          Text('\$$fmt', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextDark)),
-        ])),
-        if (sinStock)
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: const Text('Sin stock', style: TextStyle(fontSize: 11, color: Colors.grey)))
-        else if (cantidad == 0)
-          GestureDetector(
-            onTap: onAgregar,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(color: kAmber, borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.add, color: Colors.white, size: 18),
-            ),
-          )
-        else
+      )),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 1))],
+        ),
+        child: Row(children: [
           Container(
-            decoration: BoxDecoration(border: Border.all(color: kAmber), borderRadius: BorderRadius.circular(8)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              GestureDetector(onTap: onQuitar, child: const Padding(padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6), child: Icon(Icons.remove, size: 16, color: kAmber))),
-              Text('$cantidad', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kAmber)),
-              GestureDetector(onTap: onAgregar, child: const Padding(padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6), child: Icon(Icons.add, size: 16, color: kAmber))),
-            ]),
+            width: 52, height: 52,
+            decoration: BoxDecoration(color: kBgPage, borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.construction, color: kAmber, size: 24),
           ),
-      ]),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(producto['nombre'] ?? '',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kTextDark),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
+            if ((producto['marca'] ?? '').isNotEmpty)
+              Text(producto['marca'], style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text('${producto['unidad'] ?? ''} · ${sinStock ? 'Sin stock' : '$stock en stock'}',
+              style: TextStyle(fontSize: 10, color: sinStock ? Colors.red : Colors.grey)),
+            const SizedBox(height: 3),
+            Text('\$$fmt', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextDark)),
+          ])),
+          if (sinStock)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+              child: const Text('Sin stock', style: TextStyle(fontSize: 11, color: Colors.grey)),
+            )
+          else if (cantidad == 0)
+            GestureDetector(
+              onTap: onAgregar,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(color: kAmber, borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.add, color: Colors.white, size: 18),
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () {},
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                decoration: BoxDecoration(border: Border.all(color: kAmber), borderRadius: BorderRadius.circular(8)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  GestureDetector(onTap: onQuitar, child: const Padding(padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6), child: Icon(Icons.remove, size: 16, color: kAmber))),
+                  SizedBox(width: 24, child: Center(child: Text('$cantidad', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: kAmber)))),
+                  GestureDetector(onTap: onAgregar, child: const Padding(padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6), child: Icon(Icons.add, size: 16, color: kAmber))),
+                ]),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 }
