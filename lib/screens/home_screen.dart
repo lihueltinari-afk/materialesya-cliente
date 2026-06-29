@@ -274,6 +274,9 @@ class _InicioTabState extends State<_InicioTab> {
           )),
         ),
 
+        // ── Buscador inteligente (IA)
+        SliverToBoxAdapter(child: _BuscadorIA(onVerComercio: widget.onVerComercio)),
+
         // ── Categorías
         SliverToBoxAdapter(child: Container(
           color: Colors.white,
@@ -804,3 +807,187 @@ class _FiltroChip extends StatelessWidget {
 }
 
 String _fmt(double v) => v.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
+
+// ─── BUSCADOR INTELIGENTE ─────────────────────────────────────────────────────
+class _BuscadorIA extends StatefulWidget {
+  final void Function(Map<String, dynamic>) onVerComercio;
+  const _BuscadorIA({required this.onVerComercio});
+  @override
+  State<_BuscadorIA> createState() => _BuscadorIAState();
+}
+
+class _BuscadorIAState extends State<_BuscadorIA> {
+  final _ctrl = TextEditingController();
+  List<dynamic> _resultados = [];
+  List<String> _detectado = [];
+  bool _cargando = false;
+  bool _buscado = false;
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _buscar(String q) async {
+    if (q.trim().isEmpty) {
+      setState(() { _resultados = []; _buscado = false; _detectado = []; });
+      return;
+    }
+    setState(() => _cargando = true);
+    final res = await ApiService.get('/comercio/recomendacion?q=${Uri.encodeComponent(q.trim())}');
+    if (!mounted) return;
+    final data = res['data'];
+    setState(() {
+      _resultados = data is Map && data['locales'] is List ? data['locales'] : [];
+      _detectado = data is Map && data['detectado'] is List ? List<String>.from(data['detectado']) : [];
+      _cargando = false;
+      _buscado = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Barra de entrada
+        Row(children: [
+          Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(color: kNavy, borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+          ),
+          const SizedBox(width: 8),
+          const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('¿Qué necesitás?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: kTextDark)),
+            Text('Te recomendamos el mejor local', style: TextStyle(fontSize: 10, color: kTextGrey)),
+          ]),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: TextField(
+            controller: _ctrl,
+            onSubmitted: _buscar,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Ej: instalación de agua, áridos, pintura...',
+              prefixIcon: const Icon(Icons.search, color: kNavy, size: 18),
+              filled: true, fillColor: kBgPage,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              suffixIcon: _ctrl.text.isNotEmpty
+                ? IconButton(icon: const Icon(Icons.close, size: 16), onPressed: () { _ctrl.clear(); _buscar(''); })
+                : null,
+            ),
+          )),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => _buscar(_ctrl.text),
+            child: Container(
+              height: 44, width: 44,
+              decoration: BoxDecoration(color: kNavy, borderRadius: BorderRadius.circular(10)),
+              child: _cargando
+                ? const Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+            ),
+          ),
+        ]),
+
+        // Chips de lo detectado
+        if (_detectado.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(spacing: 6, children: _detectado.map((d) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(color: kNavy.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.check_circle, size: 12, color: kNavy),
+              const SizedBox(width: 4),
+              Text(d, style: const TextStyle(fontSize: 11, color: kNavy, fontWeight: FontWeight.w600)),
+            ]),
+          )).toList()),
+        ],
+
+        // Resultados rankeados
+        if (_buscado) ...[
+          const SizedBox(height: 12),
+          if (_resultados.isEmpty)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('No encontramos locales para eso', style: TextStyle(color: kTextGrey, fontSize: 13)),
+            ))
+          else
+            Column(children: _resultados.asMap().entries.take(3).map((e) {
+              final i = e.key;
+              final c = e.value;
+              final abierto = c['abierto'] == true;
+              final tiempo = c['tiempo_entrega_estimado'] ?? 30;
+              final envio = double.tryParse(c['costo_envio'].toString()) ?? 0;
+              final razon = c['razon_recomendacion'] as String? ?? '';
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: i == 0 ? kNavy.withValues(alpha: 0.04) : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: i == 0 ? kNavy.withValues(alpha: 0.2) : Colors.grey.shade100),
+                ),
+                child: GestureDetector(
+                  onTap: () => widget.onVerComercio(Map<String, dynamic>.from(c)),
+                  child: Row(children: [
+                    // Ranking badge
+                    Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        color: i == 0 ? kNavy : (i == 1 ? kAmber : Colors.grey.shade300),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(child: Text('${i + 1}',
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900))),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Expanded(child: Text(c['nombre'] ?? '',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: kTextDark),
+                          maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        if (i == 0) Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: kNavy, borderRadius: BorderRadius.circular(6)),
+                          child: const Text('MEJOR OPCIÓN', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                        ),
+                      ]),
+                      const SizedBox(height: 2),
+                      Row(children: [
+                        Icon(Icons.access_time_outlined, size: 11, color: kTextGrey),
+                        const SizedBox(width: 3),
+                        Text('$tiempo min', style: const TextStyle(fontSize: 11, color: kTextGrey)),
+                        const SizedBox(width: 8),
+                        Icon(Icons.delivery_dining_outlined, size: 11, color: kTextGrey),
+                        const SizedBox(width: 3),
+                        Text(envio == 0 ? 'Envío gratis' : '\$${envio.toStringAsFixed(0)}',
+                          style: TextStyle(fontSize: 11, color: envio == 0 ? kSuccess : kTextGrey,
+                            fontWeight: envio == 0 ? FontWeight.w700 : FontWeight.normal)),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 6, height: 6,
+                          decoration: BoxDecoration(color: abierto ? kSuccess : Colors.grey, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(abierto ? 'Abierto' : 'Cerrado',
+                          style: TextStyle(fontSize: 11, color: abierto ? kSuccess : Colors.grey)),
+                      ]),
+                      if (razon.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(razon, style: const TextStyle(fontSize: 10, color: kNavy, fontWeight: FontWeight.w600)),
+                      ],
+                    ])),
+                    const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.grey),
+                  ]),
+                ),
+              );
+            }).toList()),
+        ],
+      ]),
+    );
+  }
+}
