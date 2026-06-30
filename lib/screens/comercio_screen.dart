@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'cart_screen.dart';
@@ -452,7 +453,15 @@ class _ProductoTile extends StatelessWidget {
           Container(
             width: 52, height: 52,
             decoration: BoxDecoration(color: kBgPage, borderRadius: BorderRadius.circular(10)),
-            child: const Icon(Icons.construction, color: kAmber, size: 24),
+            clipBehavior: Clip.antiAlias,
+            child: producto['imagen_principal_url'] != null
+              ? CachedNetworkImage(
+                  imageUrl: producto['imagen_principal_url'],
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => const Icon(Icons.construction, color: kAmber, size: 24),
+                  errorWidget: (_, __, ___) => const Icon(Icons.construction, color: kAmber, size: 24),
+                )
+              : const Icon(Icons.construction, color: kAmber, size: 24),
           ),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

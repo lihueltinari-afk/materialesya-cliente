@@ -3,6 +3,7 @@ import '../theme.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
+import 'aceptar_terminos_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -25,11 +26,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     Future.delayed(const Duration(seconds: 2), () async {
       if (!mounted) return;
       final token = await ApiService.obtenerToken();
+      final aceptados = await terminosYaAceptados();
       if (!mounted) return;
-      if (token != null && token.isNotEmpty) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+      final destino = (token != null && token.isNotEmpty) ? const HomeScreen() : const LoginScreen();
+      if (aceptados) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => destino));
       } else {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => AceptarTerminosScreen(destino: destino)));
       }
     });
   }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'comercio_screen.dart';
@@ -545,8 +546,8 @@ class _LocalCard extends StatelessWidget {
               height: 90,
               color: kAmber.withValues(alpha: 0.08),
               child: comercio['banner_url'] != null
-                ? Image.network(comercio['banner_url'], fit: BoxFit.cover, width: double.infinity,
-                    errorBuilder: (_, __, ___) => _bannerPlaceholder(comercio['nombre']))
+                ? CachedNetworkImage(imageUrl: comercio['banner_url'], fit: BoxFit.cover, width: double.infinity,
+                    errorWidget: (_, __, ___) => _bannerPlaceholder(comercio['nombre']))
                 : _bannerPlaceholder(comercio['nombre']),
             ),
           ),
@@ -562,7 +563,7 @@ class _LocalCard extends StatelessWidget {
                   boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6)],
                 ),
                 child: comercio['logo_url'] != null
-                  ? ClipOval(child: Image.network(comercio['logo_url'], fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.store_rounded, color: kAmber, size: 24)))
+                  ? ClipOval(child: CachedNetworkImage(imageUrl: comercio['logo_url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.store_rounded, color: kAmber, size: 24)))
                   : const Icon(Icons.store_rounded, color: kAmber, size: 24),
               ),
               const SizedBox(width: 10),

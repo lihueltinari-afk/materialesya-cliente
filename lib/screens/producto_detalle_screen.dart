@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../theme.dart';
 
 class ProductoDetalleScreen extends StatefulWidget {
@@ -27,6 +28,11 @@ class _ProductoDetalleScreenState extends State<ProductoDetalleScreen> {
     super.initState();
     _cantidad = widget.cantidadActual;
   }
+
+  Widget _placeholderImagen() => Center(child: Stack(alignment: Alignment.center, children: [
+    Container(width: 120, height: 120, decoration: BoxDecoration(color: kAmber.withValues(alpha: 0.12), shape: BoxShape.circle)),
+    const Icon(Icons.construction, size: 70, color: kAmber),
+  ]));
 
   String _fmt(double v) => v.toStringAsFixed(0).replaceAllMapped(
     RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
@@ -91,16 +97,14 @@ class _ProductoDetalleScreenState extends State<ProductoDetalleScreen> {
           flexibleSpace: FlexibleSpaceBar(
             background: Container(
               color: kAmber.withValues(alpha: 0.06),
-              child: Center(child: Stack(alignment: Alignment.center, children: [
-                Container(
-                  width: 120, height: 120,
-                  decoration: BoxDecoration(
-                    color: kAmber.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const Icon(Icons.construction, size: 70, color: kAmber),
-              ])),
+              child: widget.producto['imagen_principal_url'] != null
+                ? CachedNetworkImage(
+                    imageUrl: widget.producto['imagen_principal_url'],
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: kAmber, strokeWidth: 2)),
+                    errorWidget: (_, __, ___) => _placeholderImagen(),
+                  )
+                : _placeholderImagen(),
             ),
           ),
         ),
