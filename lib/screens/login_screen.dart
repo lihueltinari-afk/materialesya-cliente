@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'home_screen.dart';
+import 'verificar_email_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool sesionExpirada;
@@ -45,7 +46,13 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (res['status'] == 200 || res['status'] == 201) {
         if (!mounted) return;
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+        if (_esRegistro) {
+          Navigator.pushReplacement(context, MaterialPageRoute(
+            builder: (_) => VerificarEmailScreen(email: _emailCtrl.text.trim()),
+          ));
+        } else {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+        }
       } else {
         setState(() => _error = res['data']?['error'] ?? 'Error al ingresar');
       }

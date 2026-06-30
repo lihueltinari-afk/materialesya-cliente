@@ -93,6 +93,32 @@ class ApiService {
     return jsonDecode(str);
   }
 
+  static Future<Map<String, dynamic>> verificarEmail(String email, String codigo) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/auth/verificar-email'),
+        headers: await _headers(),
+        body: jsonEncode({'email': email, 'codigo': codigo}),
+      ).timeout(const Duration(seconds: 10));
+      return {'status': res.statusCode, 'data': jsonDecode(res.body)};
+    } catch (e) {
+      return {'status': 0, 'data': null, 'error': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> reenviarVerificacion(String email) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/auth/reenviar-verificacion'),
+        headers: await _headers(),
+        body: jsonEncode({'email': email}),
+      ).timeout(const Duration(seconds: 10));
+      return {'status': res.statusCode, 'data': jsonDecode(res.body)};
+    } catch (e) {
+      return {'status': 0, 'data': null, 'error': e.toString()};
+    }
+  }
+
   // ── PRODUCTOS ─────────────────────────────────────────────────────────────
   static Future<List<dynamic>> obtenerProductos({int? categoriaId, String? busqueda, int limit = 30, int offset = 0}) async {
     String url = '$_base/productos?limit=$limit&offset=$offset';
