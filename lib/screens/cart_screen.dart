@@ -1,4 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'pedidos_screen.dart';
@@ -16,7 +23,7 @@ class CartScreen extends StatefulWidget {
 class _CartScreenState extends State<CartScreen> {
   late Map<int, Map<String, dynamic>> _carrito;
   int _paso = 0; // 0=carrito 1=dirección 2=pago 3=confirmar
-  final _dirCtrl = TextEditingController(text: 'Av. San Martín 1234, Mendoza');
+  final _dirCtrl = TextEditingController();
   String _metodoPago = 'efectivo';
   bool _enviando = false;
 
@@ -42,6 +49,11 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> _confirmar() async {
     if (_carrito.isEmpty) return;
+    if (_dirCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Ingresá una dirección de entrega'), backgroundColor: kWarning));
+      return;
+    }
     setState(() => _enviando = true);
 
     final items = _carrito.entries.map((e) => {
@@ -140,7 +152,6 @@ class _CartScreenState extends State<CartScreen> {
         padding: const EdgeInsets.all(16),
         color: Colors.white,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          // Resumen de precio siempre visible
           Row(children: [
             const Text('Total del pedido', style: TextStyle(fontSize: 13, color: Colors.grey)),
             const Spacer(),
@@ -202,14 +213,12 @@ class _PasoCarrito extends StatelessWidget {
     final costoEnvio = double.tryParse(comercio['costo_envio'].toString()) ?? 0;
 
     return ListView(padding: const EdgeInsets.all(16), children: [
-      // Local
       Row(children: [
         const Icon(Icons.store_outlined, size: 16, color: kAmber),
         const SizedBox(width: 6),
         Text(comercio['nombre'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kTextDark)),
       ]),
       const SizedBox(height: 12),
-      // Items
       ...carrito.entries.map((e) {
         final item = e.value;
         final id = e.key;
@@ -240,7 +249,6 @@ class _PasoCarrito extends StatelessWidget {
         );
       }),
       const SizedBox(height: 8),
-      // Resumen
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade100)),
@@ -256,13 +264,162 @@ class _PasoCarrito extends StatelessWidget {
 }
 
 // ─── PASO 1: DIRECCIÓN ────────────────────────────────────────────────────────
-class _PasoDireccion extends StatelessWidget {
+class _PasoDireccion extends StatefulWidget {
   final TextEditingController ctrl;
   const _PasoDireccion({required this.ctrl});
+  @override
+  State<_PasoDireccion> createState() => _PasoDireccionState();
+}
+
+class _PasoDireccionState extends State<_PasoDireccion> {
+  List<String> _direcciones = [];
+  final _mapCtrl = MapController();
+  LatLng _centro = const LatLng(-32.8908, -68.8272); // Mendoza
+  LatLng? _pin;
+  bool _geocodificando = false;
+  bool _buscandoUbicacion = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarDirecciones();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _cargarDirecciones() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dirs = prefs.getStringList('direcciones') ?? [];
+    if (mounted) setState(() => _direcciones = dirs);
+    if (widget.ctrl.text.trim().isEmpty && dirs.isNotEmpty) {
+      widget.ctrl.text = dirs.first;
+      _geocodificar(dirs.first);
+    }
+  }
+
+  void _onCambioTexto(String texto) {
+    setState(() {});
+    _debounce?.cancel();
+    if (texto.trim().length < 5) return;
+    _debounce = Timer(const Duration(milliseconds: 1200), () => _geocodificar(texto));
+  }
+
+  Future<void> _geocodificar(String direccion) async {
+    if (direccion.trim().isEmpty) return;
+    setState(() => _geocodificando = true);
+    try {
+      final query = Uri.encodeComponent('$direccion, Mendoza, Argentina');
+      final res = await http.get(
+        Uri.parse('https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1&countrycodes=ar'),
+        headers: {'User-Agent': 'MaterialesYaApp/1.0 (materialesya@gmail.com)'},
+      ).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as List;
+        if (data.isNotEmpty && mounted) {
+          final lat = double.parse(data[0]['lat'].toString());
+          final lon = double.parse(data[0]['lon'].toString());
+          setState(() { _pin = LatLng(lat, lon); _centro = _pin!; });
+          _mapCtrl.move(_pin!, 15);
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _geocodificando = false);
+  }
+
+  Future<void> _usarMiUbicacion() async {
+    setState(() => _buscandoUbicacion = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Activá el GPS para usar tu ubicación'), backgroundColor: kWarning));
+        setState(() => _buscandoUbicacion = false);
+        return;
+      }
+      LocationPermission permiso = await Geolocator.checkPermission();
+      if (permiso == LocationPermission.denied) {
+        permiso = await Geolocator.requestPermission();
+        if (permiso == LocationPermission.denied) {
+          setState(() => _buscandoUbicacion = false);
+          return;
+        }
+      }
+      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high)
+        .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      setState(() { _pin = LatLng(pos.latitude, pos.longitude); _centro = _pin!; });
+      _mapCtrl.move(_pin!, 16);
+      // Reverse geocode para completar el campo de texto
+      final res = await http.get(
+        Uri.parse('https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json'),
+        headers: {'User-Agent': 'MaterialesYaApp/1.0'},
+      );
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        final address = data['address'];
+        final calle = address['road'] ?? '';
+        final numero = address['house_number'] ?? '';
+        final dir = '$calle${numero.isNotEmpty ? ' $numero' : ''}, Mendoza'.trim();
+        widget.ctrl.text = dir;
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo obtener tu ubicación'), backgroundColor: kError));
+    }
+    if (mounted) setState(() => _buscandoUbicacion = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.all(16), children: [
+      // Direcciones guardadas
+      if (_direcciones.isNotEmpty) ...[
+        const Text('Mis direcciones guardadas',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kTextGrey)),
+        const SizedBox(height: 8),
+        ..._direcciones.map((dir) {
+          final sel = widget.ctrl.text.trim() == dir.trim();
+          return GestureDetector(
+            onTap: () {
+              setState(() => widget.ctrl.text = dir);
+              _geocodificar(dir);
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: sel ? kAmber.withValues(alpha: 0.08) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: sel ? kAmber : Colors.grey.shade200, width: sel ? 1.5 : 1),
+              ),
+              child: Row(children: [
+                Icon(Icons.location_on_rounded, color: sel ? kAmber : Colors.grey, size: 18),
+                const SizedBox(width: 10),
+                Expanded(child: Text(dir,
+                  style: TextStyle(fontSize: 13, fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                    color: sel ? kAmber : kTextDark))),
+                if (sel) const Icon(Icons.check_circle_rounded, color: kAmber, size: 18),
+              ]),
+            ),
+          );
+        }),
+        const SizedBox(height: 12),
+        const Row(children: [
+          Expanded(child: Divider()),
+          Padding(padding: EdgeInsets.symmetric(horizontal: 10),
+            child: Text('o ingresá otra dirección', style: TextStyle(fontSize: 11, color: Colors.grey))),
+          Expanded(child: Divider()),
+        ]),
+        const SizedBox(height: 12),
+      ],
+
+      // Campo manual
       Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
@@ -273,55 +430,134 @@ class _PasoDireccion extends StatelessWidget {
             Text('¿Dónde entregamos?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextDark)),
           ]),
           const SizedBox(height: 4),
-          const Text('Ingresá la dirección completa incluyendo piso o departamento si aplica.',
+          const Text('Incluí piso o departamento si aplica.',
             style: TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 16),
           TextField(
-            controller: ctrl,
+            controller: widget.ctrl,
             maxLines: 2,
             textCapitalization: TextCapitalization.words,
+            onChanged: _onCambioTexto,
             decoration: InputDecoration(
-              hintText: 'Ej: Av. San Martín 1234, piso 3 dpto B, Mendoza',
+              hintText: 'Ej: Av. San Martín 1234, Mendoza',
               prefixIcon: const Icon(Icons.home_outlined, color: kAmber),
-              filled: true,
-              fillColor: kBgPage,
+              filled: true, fillColor: kBgPage,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kAmber)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              suffixIcon: _geocodificando
+                ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kAmber)))
+                : null,
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Botón usar ubicación actual
+          OutlinedButton.icon(
+            onPressed: _buscandoUbicacion ? null : _usarMiUbicacion,
+            icon: _buscandoUbicacion
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: kAmber))
+              : const Icon(Icons.my_location_rounded, color: kAmber, size: 16),
+            label: Text(_buscandoUbicacion ? 'Obteniendo ubicación...' : 'Usar mi ubicación actual',
+              style: const TextStyle(color: kAmber, fontSize: 13, fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: kAmber),
+              minimumSize: const Size(double.infinity, 40),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           ),
         ]),
       ),
-      const SizedBox(height: 12),
+
+      const SizedBox(height: 16),
+
+      // Mapa con OpenStreetMap
+      ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SizedBox(
+          height: 200,
+          child: Stack(children: [
+            FlutterMap(
+              mapController: _mapCtrl,
+              options: MapOptions(
+                initialCenter: _centro,
+                initialZoom: 13,
+                onTap: (tapPos, point) {
+                  setState(() => _pin = point);
+                  // Reverse geocode al tocar el mapa
+                  _reverseGeocode(point);
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.materialesya.app',
+                ),
+                if (_pin != null)
+                  MarkerLayer(markers: [
+                    Marker(
+                      point: _pin!,
+                      width: 40, height: 40,
+                      child: const Icon(Icons.location_on, color: kAmber, size: 40),
+                    ),
+                  ]),
+              ],
+            ),
+            // Overlay: instrucción
+            Positioned(
+              top: 8, left: 8, right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4)],
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.touch_app_rounded, size: 14, color: kAmber),
+                  SizedBox(width: 6),
+                  Text('Tocá el mapa para ajustar la ubicación exacta',
+                    style: TextStyle(fontSize: 11, color: kTextGrey)),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+      ),
+
+      const SizedBox(height: 10),
       Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: kAmber.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: kAmber.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
         child: const Row(children: [
-          Icon(Icons.info_outline, color: kAmber, size: 18),
-          SizedBox(width: 10),
+          Icon(Icons.info_outline, color: kAmber, size: 16),
+          SizedBox(width: 8),
           Expanded(child: Text(
-            'El repartidor te contactará si necesita indicaciones adicionales para encontrar la dirección.',
-            style: TextStyle(fontSize: 12, color: kAmber, height: 1.5),
+            'El repartidor te contactará si necesita indicaciones adicionales.',
+            style: TextStyle(fontSize: 11, color: kAmber, height: 1.4),
           )),
         ]),
       ),
-      const SizedBox(height: 16),
-      // Mapa estático (decorativo)
-      Container(
-        height: 160,
-        decoration: BoxDecoration(
-          color: const Color(0xFFE8F4EA),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.map_outlined, size: 40, color: Colors.grey),
-          SizedBox(height: 8),
-          Text('Mapa de entrega', style: TextStyle(color: Colors.grey, fontSize: 13)),
-          Text('(disponible próximamente)', style: TextStyle(color: Colors.grey, fontSize: 11)),
-        ])),
-      ),
     ]);
+  }
+
+  Future<void> _reverseGeocode(LatLng point) async {
+    try {
+      final res = await http.get(
+        Uri.parse('https://nominatim.openstreetmap.org/reverse?lat=${point.latitude}&lon=${point.longitude}&format=json'),
+        headers: {'User-Agent': 'MaterialesYaApp/1.0'},
+      );
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        final address = data['address'];
+        final calle = address?['road'] ?? '';
+        final numero = address?['house_number'] ?? '';
+        final dir = '$calle${numero.isNotEmpty ? ' $numero' : ''}, Mendoza'.trim();
+        if (dir.trim().isNotEmpty && dir.trim() != ', Mendoza') {
+          widget.ctrl.text = dir;
+          setState(() {});
+        }
+      }
+    } catch (_) {}
   }
 }
 
@@ -357,8 +593,7 @@ class _PasoPago extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
+                color: Colors.white, borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: sel ? kAmber : Colors.grey.shade200, width: sel ? 2 : 1),
                 boxShadow: sel ? [BoxShadow(color: kAmber.withValues(alpha: 0.1), blurRadius: 8)] : null,
               ),
@@ -424,14 +659,12 @@ class _PasoConfirmar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.all(16), children: [
-      // Resumen visual
       Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Resumen del pedido', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextDark)),
           const SizedBox(height: 14),
-          // Items
           ...carrito.entries.map((e) {
             final item = e.value;
             return Padding(
@@ -462,14 +695,12 @@ class _PasoConfirmar extends StatelessWidget {
         ]),
       ),
       const SizedBox(height: 10),
-      // Datos de entrega
       _TarjetaInfo(icono: Icons.location_on_outlined, titulo: 'Entrega en', contenido: dir),
       const SizedBox(height: 10),
       _TarjetaInfo(icono: Icons.payment_outlined, titulo: 'Método de pago', contenido: _nombreMetodo(metodo)),
       const SizedBox(height: 10),
       _TarjetaInfo(icono: Icons.store_outlined, titulo: 'Comercio', contenido: comercio['nombre'] ?? ''),
       const SizedBox(height: 10),
-      // Aviso
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(12)),
@@ -477,7 +708,7 @@ class _PasoConfirmar extends StatelessWidget {
           Icon(Icons.info_outline, color: Color(0xFFF59E0B), size: 18),
           SizedBox(width: 10),
           Expanded(child: Text(
-            'Al confirmar, el comercio recibirá tu pedido y comenzará a prepararlo. Recibirás una notificación cuando el repartidor salga.',
+            'Al confirmar, el comercio recibirá tu pedido y comenzará a prepararlo.',
             style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.5),
           )),
         ]),
@@ -552,7 +783,6 @@ class _ConfirmacionScreen extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Column(children: [
           const Spacer(),
-          // Ícono de éxito animado
           TweenAnimationBuilder<double>(
             tween: Tween(begin: 0, end: 1),
             duration: const Duration(milliseconds: 600),
@@ -571,7 +801,6 @@ class _ConfirmacionScreen extends StatelessWidget {
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 14, color: Colors.grey, height: 1.6)),
           const SizedBox(height: 32),
-          // Tarjeta resumen
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -588,7 +817,6 @@ class _ConfirmacionScreen extends StatelessWidget {
             ]),
           ),
           const Spacer(),
-          // Botones
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).popUntil((r) => r.isFirst);

@@ -182,6 +182,7 @@ class _InicioTabState extends State<_InicioTab> {
   List<dynamic> _pedidosRecientes = [];
   bool _cargando = true;
   int _catSeleccionada = 0;
+  String? _error;
 
   @override
   void initState() {
@@ -190,22 +191,31 @@ class _InicioTabState extends State<_InicioTab> {
   }
 
   Future<void> _cargarTodo() async {
-    setState(() => _cargando = true);
-    final results = await Future.wait([
-      ApiService.get('/comercio/categorias'),
-      ApiService.get('/comercio/lista'),
-      ApiService.get('/pedidos/mis-pedidos'),
-    ]);
-    if (!mounted) return;
-    setState(() {
-      _categorias = results[0]['data'] is List
-          ? List<Map<String, dynamic>>.from(results[0]['data'])
-          : [];
-      _comercios = results[1]['data'] is List ? results[1]['data'] : [];
-      final pedidos = results[2]['data'] is List ? results[2]['data'] as List : [];
-      _pedidosRecientes = pedidos.take(2).toList();
-      _cargando = false;
-    });
+    setState(() { _cargando = true; _error = null; });
+    try {
+      final results = await Future.wait([
+        ApiService.get('/comercio/categorias'),
+        ApiService.get('/comercio/lista'),
+        ApiService.get('/pedidos/mis-pedidos'),
+      ]);
+      if (!mounted) return;
+      // Verificar errores de red (status 0 = sin conexión)
+      if (results[1]['status'] == 0) {
+        setState(() { _cargando = false; _error = 'No pudimos cargar los comercios.\nVerificá tu conexión a internet.'; });
+        return;
+      }
+      setState(() {
+        _categorias = results[0]['data'] is List
+            ? List<Map<String, dynamic>>.from(results[0]['data'])
+            : [];
+        _comercios = results[1]['data'] is List ? results[1]['data'] : [];
+        final pedidos = results[2]['data'] is List ? results[2]['data'] as List : [];
+        _pedidosRecientes = pedidos.take(2).toList();
+        _cargando = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _cargando = false; _error = 'No pudimos cargar los comercios.\nVerificá tu conexión a internet.'; });
+    }
   }
 
   Future<void> _cargar({int? categoriaId}) async {
@@ -319,7 +329,12 @@ class _InicioTabState extends State<_InicioTab> {
               itemBuilder: (_, i) {
                 final p = _pedidosRecientes[i];
                 return GestureDetector(
-                  onTap: () {}, // TODO: navegar a detalle del pedido
+                  onTap: () async {
+                    final res = await ApiService.get('/comercio/${p['comercio_id']}/info');
+                    if (res['status'] == 200 && mounted) {
+                      widget.onVerComercio(Map<String, dynamic>.from(res['data']));
+                    }
+                  },
                   child: Container(
                     width: 220,
                     margin: const EdgeInsets.only(right: 10),
@@ -363,6 +378,26 @@ class _InicioTabState extends State<_InicioTab> {
         // ── Lista locales
         if (_cargando)
           const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: kAmber)))
+        else if (_error != null)
+          SliverFillRemaining(child: Center(child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Container(width: 80, height: 80,
+                decoration: BoxDecoration(color: kErrorBg, shape: BoxShape.circle),
+                child: const Icon(Icons.wifi_off_rounded, size: 36, color: kError)),
+              const SizedBox(height: 16),
+              Text(_error!, textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 15, color: kTextGrey, height: 1.5)),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _cargarTodo,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Reintentar'),
+                style: ElevatedButton.styleFrom(backgroundColor: kAmber, foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              ),
+            ]),
+          )))
         else if (_comercios.isEmpty)
           SliverFillRemaining(child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.store_outlined, size: 48, color: Colors.grey),

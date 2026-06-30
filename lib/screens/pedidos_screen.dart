@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -13,15 +14,48 @@ class PedidosScreen extends StatefulWidget {
 class _PedidosScreenState extends State<PedidosScreen> {
   List<dynamic> _pedidos = [];
   bool _cargando = true;
+  String? _error;
+  Timer? _timer;
 
   @override
-  void initState() { super.initState(); _cargar(); }
+  void initState() {
+    super.initState();
+    _cargar();
+    // Polling cada 10 segundos para actualizar estados activos
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _cargarSilencioso());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _cargar() async {
-    setState(() => _cargando = true);
-    final pedidos = await ApiService.misPedidos();
-    if (mounted) setState(() { _pedidos = pedidos; _cargando = false; });
+    setState(() { _cargando = true; _error = null; });
+    await _cargarSilencioso(mostrarCargando: false);
+    if (mounted) setState(() => _cargando = false);
   }
+
+  Future<void> _cargarSilencioso({bool mostrarCargando = false}) async {
+    try {
+      final pedidos = await ApiService.misPedidos();
+      if (mounted) setState(() {
+        _pedidos = pedidos;
+        _error = null;
+        if (mostrarCargando) _cargando = false;
+      });
+    } catch (e) {
+      if (mounted && _pedidos.isEmpty) {
+        setState(() => _error = 'No pudimos cargar tus pedidos.\nVerificá tu conexión.');
+      }
+    }
+  }
+
+  bool get _hayPedidosActivos => _pedidos.any((p) {
+    final e = p['estado'] as String? ?? '';
+    return !['entregado', 'cancelado'].contains(e);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -31,30 +65,78 @@ class _PedidosScreenState extends State<PedidosScreen> {
         Container(
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: const Row(children: [
-            Text('Mis pedidos', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: kTextDark)),
+          child: Row(children: [
+            const Text('Mis pedidos', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: kTextDark)),
+            const Spacer(),
+            if (_hayPedidosActivos)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: kSuccessBg, borderRadius: BorderRadius.circular(20)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.radio_button_checked, size: 8, color: kSuccess),
+                  SizedBox(width: 4),
+                  Text('En vivo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: kSuccess)),
+                ]),
+              ),
           ]),
         ),
         Expanded(child: _cargando
           ? const Center(child: CircularProgressIndicator(color: kAmber))
-          : _pedidos.isEmpty
-            ? _Empty()
-            : RefreshIndicator(
-                color: kAmber, onRefresh: _cargar,
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(14),
-                  itemCount: _pedidos.length,
-                  itemBuilder: (_, i) => _PedidoCard(
-                    pedido: _pedidos[i],
-                    onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => DetallePedidoScreen(pedidoId: _pedidos[i]['id']),
-                    )),
+          : _error != null && _pedidos.isEmpty
+            ? _ErrorState(mensaje: _error!, onReintentar: _cargar)
+            : _pedidos.isEmpty
+              ? _Empty()
+              : RefreshIndicator(
+                  color: kAmber, onRefresh: _cargar,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: _pedidos.length,
+                    itemBuilder: (_, i) => _PedidoCard(
+                      pedido: _pedidos[i],
+                      onTap: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => DetallePedidoScreen(pedidoId: _pedidos[i]['id']),
+                      )).then((_) => _cargar()),
+                    ),
                   ),
                 ),
-              ),
         ),
       ])),
     );
+  }
+}
+
+// ─── ESTADO DE ERROR ──────────────────────────────────────────────────────────
+class _ErrorState extends StatelessWidget {
+  final String mensaje;
+  final VoidCallback onReintentar;
+  const _ErrorState({required this.mensaje, required this.onReintentar});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Container(
+          width: 80, height: 80,
+          decoration: BoxDecoration(color: kErrorBg, shape: BoxShape.circle),
+          child: const Icon(Icons.wifi_off_rounded, size: 36, color: kError),
+        ),
+        const SizedBox(height: 16),
+        Text(mensaje, textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 15, color: kTextGrey, height: 1.5)),
+        const SizedBox(height: 20),
+        ElevatedButton.icon(
+          onPressed: onReintentar,
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Reintentar'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kAmber,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ]),
+    ));
   }
 }
 
@@ -186,13 +268,42 @@ class DetallePedidoScreen extends StatefulWidget {
 class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
   Map<String, dynamic>? _pedido;
   bool _cargando = true;
+  Timer? _timer;
+
+  static const _estadosTerminales = ['entregado', 'cancelado'];
 
   @override
-  void initState() { super.initState(); _cargar(); }
+  void initState() {
+    super.initState();
+    _cargar();
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+      final estado = _pedido?['estado'] as String? ?? '';
+      if (!_estadosTerminales.contains(estado)) _cargarSilencioso();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _cargar() async {
+    setState(() => _cargando = true);
+    await _cargarSilencioso();
+    if (mounted) setState(() => _cargando = false);
+  }
+
+  Future<void> _cargarSilencioso() async {
     final res = await ApiService.get('/pedidos/${widget.pedidoId}');
-    if (mounted) setState(() { _pedido = res['data']; _cargando = false; });
+    if (mounted && res['status'] == 200) {
+      setState(() { _pedido = res['data']; _cargando = false; });
+      // Cancelar timer si llegamos a estado terminal
+      final estado = _pedido?['estado'] as String? ?? '';
+      if (_estadosTerminales.contains(estado)) {
+        _timer?.cancel();
+      }
+    }
   }
 
   @override
@@ -203,6 +314,12 @@ class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
         backgroundColor: Colors.white, elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: kTextDark), onPressed: () => Navigator.pop(context)),
         title: Text('Pedido #${widget.pedidoId}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kTextDark)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: kAmber),
+            onPressed: _cargar,
+          ),
+        ],
       ),
       body: _cargando
         ? const Center(child: CircularProgressIndicator(color: kAmber))
@@ -225,7 +342,7 @@ class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
     final lng = double.tryParse(p['comercio_lng']?.toString() ?? '') ?? -68.8272;
 
     return ListView(padding: EdgeInsets.zero, children: [
-      // Mapa
+      // Mapa con OpenStreetMap
       SizedBox(
         height: enCamino ? 220 : 160,
         child: Stack(children: [
@@ -299,7 +416,7 @@ class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
           const Divider(height: 20),
           _LineaTotal('Subtotal', '\$${fmt(subtotal)}', negrita: false),
           const SizedBox(height: 6),
-          _LineaTotal('Envío', '\$${fmt(costoEnvio)}', negrita: false),
+          _LineaTotal('Envío', costoEnvio == 0 ? 'Gratis' : '\$${fmt(costoEnvio)}', negrita: false),
           const Divider(height: 16),
           _LineaTotal('Total', '\$${fmt(total)}', negrita: true, grande: true),
         ])),
@@ -309,7 +426,7 @@ class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
       if (estado == 'entregado')
         _BotonCalificar(pedidoId: widget.pedidoId, comercio: p['comercio_nombre'] ?? ''),
 
-      // Repetir pedido
+      // Volver a pedir en este local
       Container(
         color: Colors.white,
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),

@@ -68,17 +68,27 @@ class _PerfilScreenState extends State<PerfilScreen> {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () async {
-                // Guardar localmente (sin backend de perfil por ahora)
-                final prefs = await SharedPreferences.getInstance();
-                final u = Map<String, dynamic>.from(_usuario ?? {});
-                u['nombre'] = nombreCtrl.text;
-                u['telefono'] = telCtrl.text;
-                await prefs.setString('usuario', jsonEncode(u));
+                // Guardar en backend
+                final res = await ApiService.patch('/auth/perfil', {
+                  'nombre': nombreCtrl.text.trim(),
+                  'telefono': telCtrl.text.trim(),
+                });
                 if (!mounted) return;
-                setState(() => _usuario = u);
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Datos actualizados ✓'), backgroundColor: kSuccess));
+                if (res['status'] == 200) {
+                  final u = Map<String, dynamic>.from(_usuario ?? {});
+                  u['nombre'] = nombreCtrl.text.trim();
+                  u['telefono'] = telCtrl.text.trim();
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('usuario', jsonEncode(u));
+                  if (!mounted) return;
+                  setState(() => _usuario = u);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Datos actualizados ✓'), backgroundColor: kSuccess));
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(res['data']?['error'] ?? 'Error al guardar'), backgroundColor: kError));
+                }
               },
               child: const Text('Guardar cambios'),
             ),
