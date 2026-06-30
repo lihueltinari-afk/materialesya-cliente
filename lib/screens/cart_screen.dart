@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'pedidos_screen.dart';
+import 'esperando_pago_mp_screen.dart';
 
 class CartScreen extends StatefulWidget {
   final Map<int, Map<String, dynamic>> carrito;
@@ -92,9 +93,25 @@ class _CartScreenState extends State<CartScreen> {
 
     final pedidoId = res['data']['id'];
 
-    // El pedido nace "reservado" (stock bloqueado 5 min). Como todavía no hay integración real
-    // de Mercado Pago, confirmamos el pago acá mismo simulando el webhook de aprobación —
-    // cuando se conecte MP de verdad, este paso lo tiene que disparar el webhook, no el cliente.
+    // El pedido nace "reservado" (stock bloqueado 5 min). Mercado Pago confirma el pago de
+    // verdad (ver esperando_pago_mp_screen.dart); efectivo y transferencia se confirman acá
+    // mismo porque no hay nada que esperar de un gateway externo.
+    if (_metodoPago == 'mercado_pago') {
+      final resPref = await ApiService.post('/pagos/mercadopago/crear-preferencia', {'pedido_id': pedidoId});
+      if (!mounted) return;
+      setState(() => _enviando = false);
+      if (resPref['status'] == 200) {
+        widget.onActualizar({});
+        Navigator.push(context, MaterialPageRoute(builder: (_) => EsperandoPagoMpScreen(
+          pedidoId: pedidoId, initPoint: resPref['data']['init_point'],
+        )));
+      } else {
+        final msg = resPref['data']?['error'] ?? 'No se pudo iniciar el pago con Mercado Pago';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+      }
+      return;
+    }
+
     final resConfirmar = await ApiService.post('/pedidos/$pedidoId/confirmar-pago', {});
 
     if (!mounted) return;
@@ -600,7 +617,7 @@ class _PasoPago extends StatelessWidget {
     final opciones = [
       {'id': 'efectivo', 'label': 'Efectivo', 'desc': 'Pagás al repartidor al recibir', 'icono': Icons.money, 'disponible': true},
       {'id': 'transferencia', 'label': 'Transferencia bancaria', 'desc': 'Te enviamos el alias por WhatsApp', 'icono': Icons.account_balance_outlined, 'disponible': true},
-      {'id': 'mercado_pago', 'label': 'Mercado Pago', 'desc': 'Pagá online con tarjeta o saldo', 'icono': Icons.payment_outlined, 'disponible': false},
+      {'id': 'mercado_pago', 'label': 'Mercado Pago', 'desc': 'Pagá online con tarjeta o saldo', 'icono': Icons.payment_outlined, 'disponible': true},
     ];
 
     return ListView(padding: const EdgeInsets.all(16), children: [
