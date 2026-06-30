@@ -1,11 +1,12 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback;
+import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
+  // TODO: volver a _prod antes de compilar para producción.
   static const String _prod = 'https://materialesya-backend-production.up.railway.app/api';
-  static String get _base => kIsWeb ? _prod : (const String.fromEnvironment('API_URL', defaultValue: '') != '' ? const String.fromEnvironment('API_URL') : 'http://10.0.2.2:3000/api');
+  static String get _base => const String.fromEnvironment('API_URL', defaultValue: '') != '' ? const String.fromEnvironment('API_URL') : 'http://localhost:3000/api';
 
     // Callback que se dispara cuando cualquier endpoint devuelve 401
   static VoidCallback? onSesionExpirada;
