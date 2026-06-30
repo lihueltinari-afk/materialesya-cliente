@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:geolocator/geolocator.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'comercio_screen.dart';
@@ -868,7 +869,14 @@ class _BuscadorIAState extends State<_BuscadorIA> {
       return;
     }
     setState(() => _cargando = true);
-    final res = await ApiService.get('/comercio/recomendacion?q=${Uri.encodeComponent(q.trim())}');
+    String ubicacion = '';
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+      ).timeout(const Duration(seconds: 4));
+      ubicacion = '&lat=${pos.latitude}&lng=${pos.longitude}';
+    } catch (_) {}
+    final res = await ApiService.get('/comercio/recomendacion?q=${Uri.encodeComponent(q.trim())}$ubicacion');
     if (!mounted) return;
     final data = res['data'];
     setState(() {
