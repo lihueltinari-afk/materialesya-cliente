@@ -7,6 +7,7 @@ class ApiService {
   // TODO: volver a _prod antes de compilar para producción.
   static const String _prod = 'https://materialesya-backend-production.up.railway.app/api';
   static String get _base => const String.fromEnvironment('API_URL', defaultValue: '') != '' ? const String.fromEnvironment('API_URL') : 'http://localhost:3000/api';
+  static String get baseUrlPublico => _base;
 
     // Callback que se dispara cuando cualquier endpoint devuelve 401
   static VoidCallback? onSesionExpirada;

@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 import '../theme.dart';
 import '../services/api_service.dart';
 import 'pedidos_screen.dart';
-import 'esperando_pago_mp_screen.dart';
+import 'mp_checkout_embebido_screen.dart';
 
 class CartScreen extends StatefulWidget {
   final Map<int, Map<String, dynamic>> carrito;
@@ -36,7 +36,11 @@ class _CartScreenState extends State<CartScreen> {
 
   double get _subtotal => _carrito.values.fold(0, (a, b) => a + (b['precio'] as double) * (b['cantidad'] as int));
   double get _costoEnvio => double.tryParse(widget.comercio['costo_envio'].toString()) ?? 0;
-  double get _total => _subtotal + _costoEnvio;
+  // Tarifa fija de servicio de la plataforma (debe coincidir con TARIFA_SERVICIO en el backend).
+  // El total mostrado acá es una estimación: el costo de envío final se recalcula en el
+  // servidor según la distancia real al confirmar, así que puede variar un poco.
+  static const double _tarifaServicio = 290;
+  double get _total => _subtotal + _costoEnvio + _tarifaServicio;
 
   String _fmt(double v) => v.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
 
@@ -94,7 +98,7 @@ class _CartScreenState extends State<CartScreen> {
     final pedidoId = res['data']['id'];
 
     // El pedido nace "reservado" (stock bloqueado 5 min). Mercado Pago confirma el pago de
-    // verdad (ver esperando_pago_mp_screen.dart); efectivo y transferencia se confirman acá
+    // verdad (ver mp_checkout_embebido_screen.dart); efectivo y transferencia se confirman acá
     // mismo porque no hay nada que esperar de un gateway externo.
     if (_metodoPago == 'mercado_pago') {
       final resPref = await ApiService.post('/pagos/mercadopago/crear-preferencia', {'pedido_id': pedidoId});
@@ -102,8 +106,10 @@ class _CartScreenState extends State<CartScreen> {
       setState(() => _enviando = false);
       if (resPref['status'] == 200) {
         widget.onActualizar({});
-        Navigator.push(context, MaterialPageRoute(builder: (_) => EsperandoPagoMpScreen(
-          pedidoId: pedidoId, initPoint: resPref['data']['init_point'],
+        Navigator.push(context, MaterialPageRoute(builder: (_) => MpCheckoutEmbebidoScreen(
+          pedidoId: pedidoId,
+          preferenceId: resPref['data']['preference_id'],
+          publicKey: resPref['data']['public_key'],
         )));
       } else {
         final msg = resPref['data']?['error'] ?? 'No se pudo iniciar el pago con Mercado Pago';
@@ -729,8 +735,10 @@ class _PasoConfirmar extends StatelessWidget {
           const Divider(height: 20),
           _Linea('Subtotal', '\$${fmt(subtotal)}'),
           const SizedBox(height: 6),
-          _Linea('Costo de envío', costoEnvio == 0 ? 'Gratis' : '\$${fmt(costoEnvio)}',
+          _Linea('Costo de envío', costoEnvio == 0 ? 'Gratis' : '\$${fmt(costoEnvio)} (estimado, se ajusta por distancia)',
             colorVal: costoEnvio == 0 ? kSuccess : null),
+          const SizedBox(height: 6),
+          _Linea('Tarifa de servicio', '\$${fmt(_CartScreenState._tarifaServicio)}'),
           const Divider(height: 16),
           Row(children: [
             const Text('Total a pagar', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextDark)),
