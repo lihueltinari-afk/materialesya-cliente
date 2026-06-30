@@ -61,18 +61,46 @@ class _CartScreenState extends State<CartScreen> {
       'cantidad': e.value['cantidad'],
     }).toList();
 
+    // Intentamos tomar la ubicación actual para calcular el envío por distancia real.
+    // Si el usuario no dio permiso de GPS, el backend cae al costo_envio fijo del comercio.
+    double? lat, lng;
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+      ).timeout(const Duration(seconds: 5));
+      lat = pos.latitude;
+      lng = pos.longitude;
+    } catch (_) {}
+
     final res = await ApiService.post('/pedidos', {
       'comercio_id': widget.comercio['id'],
       'items': items,
       'dir_entrega': _dirCtrl.text.trim(),
+      'lat_entrega': lat,
+      'lng_entrega': lng,
       'metodo_pago': _metodoPago,
     });
 
     if (!mounted) return;
+
+    if (res['status'] != 201) {
+      setState(() => _enviando = false);
+      final msg = res['data']?['error'] ?? 'Error al crear el pedido';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+      return;
+    }
+
+    final pedidoId = res['data']['id'];
+
+    // El pedido nace "reservado" (stock bloqueado 5 min). Como todavía no hay integración real
+    // de Mercado Pago, confirmamos el pago acá mismo simulando el webhook de aprobación —
+    // cuando se conecte MP de verdad, este paso lo tiene que disparar el webhook, no el cliente.
+    final resConfirmar = await ApiService.post('/pedidos/$pedidoId/confirmar-pago', {});
+
+    if (!mounted) return;
     setState(() => _enviando = false);
 
-    if (res['status'] == 201) {
-      final pedidoId = res['data']['id'];
+    if (resConfirmar['status'] == 200) {
       widget.onActualizar({});
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
@@ -88,7 +116,7 @@ class _CartScreenState extends State<CartScreen> {
         (route) => route.isFirst,
       );
     } else {
-      final msg = res['data']?['error'] ?? 'Error al crear el pedido';
+      final msg = resConfirmar['data']?['error'] ?? 'No se pudo confirmar el pago, intentá de nuevo';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
     }
   }

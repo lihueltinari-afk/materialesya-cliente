@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../legal_texts.dart';
 import 'home_screen.dart';
 import 'verificar_email_screen.dart';
+import 'legal_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool sesionExpirada;
@@ -15,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _esRegistro = false;
   bool _verPassword = false;
   bool _cargando = false;
+  bool _aceptaTerminos = false;
   String? _error;
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
@@ -40,6 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Map<String, dynamic> res;
       if (_esRegistro) {
         if (_nombreCtrl.text.isEmpty) { setState(() { _error = 'Ingresá tu nombre'; _cargando = false; }); return; }
+        if (!_aceptaTerminos) { setState(() { _error = 'Tenés que aceptar los Términos y la Política de Privacidad'; _cargando = false; }); return; }
         res = await ApiService.registro(_nombreCtrl.text.trim(), _emailCtrl.text.trim(), _passCtrl.text);
       } else {
         res = await ApiService.login(_emailCtrl.text.trim(), _passCtrl.text);
@@ -132,6 +137,27 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: _abrirRecuperarPassword,
                 child: const Text('¿Olvidaste tu contraseña?', style: TextStyle(color: kAmber, fontSize: 13)),
               )),
+            ],
+
+            if (_esRegistro) ...[
+              const SizedBox(height: 16),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Checkbox(value: _aceptaTerminos, onChanged: (v) => setState(() => _aceptaTerminos = v ?? false), activeColor: kAmber),
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: RichText(text: TextSpan(
+                    style: const TextStyle(fontSize: 12, color: kTextDark),
+                    children: [
+                      const TextSpan(text: 'Acepto los '),
+                      TextSpan(text: 'Términos y condiciones', style: const TextStyle(color: kAmber, fontWeight: FontWeight.w700),
+                        recognizer: TapGestureRecognizer()..onTap = () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LegalScreen(titulo: 'Términos y condiciones', texto: terminosCliente)))),
+                      const TextSpan(text: ' y la '),
+                      TextSpan(text: 'Política de privacidad', style: const TextStyle(color: kAmber, fontWeight: FontWeight.w700),
+                        recognizer: TapGestureRecognizer()..onTap = () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LegalScreen(titulo: 'Política de privacidad', texto: politicaPrivacidad)))),
+                    ],
+                  )),
+                )),
+              ]),
             ],
 
             if (_error != null) ...[

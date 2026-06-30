@@ -4,6 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import 'reclamo_screen.dart';
 
 class PedidosScreen extends StatefulWidget {
   const PedidosScreen({super.key});
@@ -267,7 +268,9 @@ class DetallePedidoScreen extends StatefulWidget {
 
 class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
   Map<String, dynamic>? _pedido;
+  Map<String, dynamic>? _reclamo;
   bool _cargando = true;
+
   Timer? _timer;
 
   static const _estadosTerminales = ['entregado', 'cancelado'];
@@ -303,7 +306,20 @@ class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
       if (_estadosTerminales.contains(estado)) {
         _timer?.cancel();
       }
+      if (estado == 'entregado' && _reclamo == null) {
+        final r = await ApiService.get('/reclamos/pedido/${widget.pedidoId}');
+        if (mounted && r['status'] == 200) setState(() => _reclamo = r['data']);
+      }
     }
+  }
+
+  // El botón "Tuve un problema" está disponible hasta 24hs después de la entrega.
+  bool get _puedeReclamar {
+    final actualizado = _pedido?['actualizado_en']?.toString();
+    if (actualizado == null) return false;
+    final fecha = DateTime.tryParse(actualizado);
+    if (fecha == null) return false;
+    return DateTime.now().difference(fecha).inHours < 24;
   }
 
   @override
@@ -425,6 +441,53 @@ class _DetallePedidoScreenState extends State<DetallePedidoScreen> {
       // Calificación
       if (estado == 'entregado')
         _BotonCalificar(pedidoId: widget.pedidoId, comercio: p['comercio_nombre'] ?? ''),
+
+      // Reclamo (disponible hasta 24hs después de la entrega)
+      if (estado == 'entregado' && _reclamo == null && _puedeReclamar)
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              final ok = await Navigator.push(context, MaterialPageRoute(builder: (_) => ReclamoScreen(pedidoId: widget.pedidoId)));
+              if (ok == true) _cargarSilencioso();
+            },
+            icon: const Icon(Icons.report_problem_outlined, size: 18, color: Colors.red),
+            label: const Text('Tuve un problema con mi pedido', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+            style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red), minimumSize: const Size(double.infinity, 46),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          ),
+        ),
+      if (_reclamo != null)
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.report_problem_outlined, size: 16, color: Colors.red),
+              const SizedBox(width: 6),
+              const Text('Reclamo enviado', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _reclamo!['estado'] == 'resuelto' ? kSuccessBg : _reclamo!['estado'] == 'rechazado' ? Colors.red.shade50 : const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _reclamo!['estado'] == 'resuelto' ? 'Resuelto' : _reclamo!['estado'] == 'rechazado' ? 'Rechazado' : 'En revisión',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                    color: _reclamo!['estado'] == 'resuelto' ? kSuccess : _reclamo!['estado'] == 'rechazado' ? Colors.red : kAmber),
+                ),
+              ),
+            ]),
+            if (_reclamo!['respuesta_comercio'] != null) ...[
+              const SizedBox(height: 8),
+              Text('Respuesta del comercio: ${_reclamo!['respuesta_comercio']}', style: const TextStyle(fontSize: 12, color: kTextGrey)),
+            ],
+          ]),
+        ),
 
       // Volver a pedir en este local
       Container(

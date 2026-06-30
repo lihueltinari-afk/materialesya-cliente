@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../soporte.dart';
+import '../legal_texts.dart';
 import 'login_screen.dart';
+import 'legal_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -221,12 +224,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
           icono: Icons.settings_outlined,
           children: [
             _Item(Icons.notifications_outlined, 'Notificaciones', onTap: () {}),
-            _Item(Icons.help_outline_rounded, 'Ayuda y soporte', onTap: () {
-              showDialog(context: context, builder: (_) => AlertDialog(
-                title: const Text('Ayuda', style: TextStyle(fontWeight: FontWeight.w800)),
-                content: const Text('¿Tenés algún problema con tu pedido?\n\nContactanos a: ayuda@materialesya.com.ar\n\nWhatsApp: +54 261 000-0000'),
-                actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar'))],
-              ));
+            _Item(Icons.support_agent_outlined, 'Ayuda / Soporte', onTap: () => abrirSoporteWhatsApp()),
+            _Item(Icons.description_outlined, 'Términos y condiciones', onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const LegalScreen(titulo: 'Términos y condiciones', texto: terminosCliente)));
+            }),
+            _Item(Icons.privacy_tip_outlined, 'Política de privacidad', onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const LegalScreen(titulo: 'Política de privacidad', texto: politicaPrivacidad)));
             }),
             _Item(Icons.info_outline_rounded, 'Acerca de MaterialesYa', onTap: () {
               showDialog(context: context, builder: (_) => AlertDialog(
